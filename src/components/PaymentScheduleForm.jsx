@@ -11,14 +11,14 @@ const PaymentScheduleForm = ({
   offer,
   applyOffer,
   setApplyOffer,
-  defaultValues
+  defaultValues,
 }) => {
   const { register, handleSubmit, watch, setValue } = useForm({
     defaultValues: {
       sharePrice: BASE_SHARE_PRICE,
       shareCalculationResult: 0,
       salesmanInput: "",
-       ...defaultValues,
+      ...(defaultValues || {}),
     },
   });
 
@@ -99,10 +99,10 @@ const PaymentScheduleForm = ({
               {...register("shareCalculationResult")}
             />
 
-            {/* 🔥 NEW FIELD (SAFE) */}
+            {/* 🔥 SALESMAN INPUT */}
             <Input
               label="Salesman (Optional)"
-              placeholder="Enter salesman name / phone / ID"
+              placeholder="Enter phone / employee ID"
               {...register("salesmanInput")}
             />
           </div>
@@ -119,8 +119,7 @@ const PaymentScheduleForm = ({
             <button
               type="submit"
               disabled={loading}
-              className={`bg-[#ebb93a] font-semibold px-6 py-2.5 text-sm rounded
-              ${
+              className={`bg-[#ebb93a] font-semibold px-6 py-2.5 text-sm rounded ${
                 loading ? "opacity-50 cursor-not-allowed" : "hover:bg-[#daa624]"
               }`}
             >

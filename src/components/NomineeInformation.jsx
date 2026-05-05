@@ -1,25 +1,28 @@
+import { useEffect } from "react";
 import { Controller, useForm } from "react-hook-form";
 import { Input } from "./Input";
 import { PhoneInput } from "./PhoneInput";
 import { Textarea } from "./Textarea";
-import { useEffect } from "react";
 
-export default function NomineeInformation({ onSubmit, onPrevious, loading, defaultValues }) {
-  const { register, handleSubmit, control, reset  } = useForm({
+export default function NomineeInformation({
+  onSubmit,
+  onPrevious,
+  loading,
   defaultValues,
-});
-
-
+}) {
+  const { register, handleSubmit, control, reset } = useForm({
+    defaultValues,
+  });
 
   const submitHandler = (data) => {
     onSubmit(data);
   };
 
   useEffect(() => {
-  if (defaultValues) {
-    reset(defaultValues);
-  }
-}, [defaultValues, reset]);
+    if (defaultValues) {
+      reset(defaultValues);
+    }
+  }, [defaultValues, reset]);
 
   return (
     <div className="bg-gray-100 py-14 px-4">
@@ -71,7 +74,12 @@ export default function NomineeInformation({ onSubmit, onPrevious, loading, defa
               {...register("nid", { required: true })}
             />
 
-            <Input label="Date of Birth" type="date" {...register("dob")} />
+            <Input
+              label="Date of Birth"
+              required
+              type="date"
+              {...register("dob", { required: true })}
+            />
           </div>
 
           {/* 🔹 Contact Info */}

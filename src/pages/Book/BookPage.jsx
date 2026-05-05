@@ -30,32 +30,36 @@ const BookPage = () => {
       const formData = new FormData();
 
       // ============================
-      // GENERAL INFO (with applicant photo + docs)
+      // GENERAL INFO
       // ============================
       const { applicantPhoto, documents, ...restGeneral } = generalInfo;
 
       // ============================
-      // NOMINEE INFO (with nominee photo)
+      // NOMINEE INFO
       // ============================
       const { nomineePhoto, ...restNominee } = nomineeData;
 
       formData.append("generalInformation", JSON.stringify(restGeneral));
-
       formData.append("nomineeInformation", JSON.stringify(restNominee));
 
       // ============================
-      // PAYMENT INFO
+      // 🔥 PAYMENT INFO FIX
       // ============================
+      const { salesmanInput, ...restPayment } = paymentInfo || {};
+
       formData.append(
         "paymentSchedule",
         JSON.stringify({
-          ...paymentInfo,
+          ...restPayment,
           appliedOffer: applyOffer ? activeOffer?._id : null,
-        }),
+        })
       );
 
+      // 🔥 IMPORTANT (separate field)
+      formData.append("salesmanInput", salesmanInput || "");
+
       // ============================
-      // FILES (IMPORTANT FIX)
+      // FILES
       // ============================
       if (applicantPhoto?.[0]) {
         formData.append("applicantPhoto", applicantPhoto[0]);
@@ -66,7 +70,6 @@ const BookPage = () => {
       }
 
       const docsArray = Array.from(documents || []);
-
       docsArray.forEach((doc) => {
         formData.append("documents", doc);
       });
@@ -84,7 +87,7 @@ const BookPage = () => {
             Authorization: `Bearer ${token}`,
           },
           body: formData,
-        },
+        }
       );
 
       const result = await response.json();
@@ -113,17 +116,12 @@ const BookPage = () => {
 
   return (
     <div>
-      {/* HERO */}
       <HeroBanner onOfferLoad={setActiveOffer} />
 
-      {/* STEPPER */}
       <div className="max-w-6xl mx-auto px-4">
         <FormStepper currentStep={step} />
       </div>
 
-      {/* ========================= */}
-      {/* STEP 1 - PAYMENT */}
-      {/* ========================= */}
       {step === 1 && (
         <PaymentScheduleForm
           defaultValues={paymentInfo}
@@ -137,9 +135,6 @@ const BookPage = () => {
         />
       )}
 
-      {/* ========================= */}
-      {/* STEP 2 - GENERAL INFO */}
-      {/* ========================= */}
       {step === 2 && (
         <GeneralInformationForm
           defaultValues={generalInfo}
@@ -151,9 +146,6 @@ const BookPage = () => {
         />
       )}
 
-      {/* ========================= */}
-      {/* STEP 3 - NOMINEE INFO */}
-      {/* ========================= */}
       {step === 3 && (
         <NomineeInformation
           defaultValues={nomineeInfo}
@@ -166,7 +158,6 @@ const BookPage = () => {
         />
       )}
 
-      {/* SUCCESS MODAL */}
       <SuccessModal open={showModal} onClose={() => setShowModal(false)} />
     </div>
   );

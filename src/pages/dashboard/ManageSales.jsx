@@ -1,1056 +1,916 @@
+// ManageSales - Redesigned with proper functionality
+
 import axios from "axios";
 import {
-  Activity,
-  AlertTriangle,
   BadgeCheck,
-  BarChart3,
-  Briefcase,
-  Loader2,
+  BookOpen,
+  Calendar,
+  ChevronLeft,
+  ChevronRight,
+  CreditCard,
+  Eye,
   Mail,
   Pencil,
   Phone,
   Plus,
-  RefreshCcw,
   Search,
   Trash2,
   TrendingUp,
-  UserCheck,
-  UserCog,
+  User,
   Users,
   X,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import { createPortal } from "react-dom";
+import {
+  Bar,
+  BarChart,
+  Cell,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
 import { toast } from "sonner";
 
-const initialSalesForm = { fullName: "", email: "", phone: "" };
-const initialAssignForm = { bookingId: "", salesmanId: "", note: "" };
-const initialStatusForm = { status: "pending", note: "" };
-
-const statusOptions = [
-  "pending",
-  "contacted",
-  "in_progress",
-  "completed",
-  "cancelled",
-];
-
-const statusConfig = {
-  pending: {
-    label: "Pending",
-    color: "bg-amber-50 text-amber-700 border border-amber-200",
-    dot: "bg-amber-400",
-  },
-  contacted: {
-    label: "Contacted",
-    color: "bg-sky-50 text-sky-700 border border-sky-200",
-    dot: "bg-sky-400",
-  },
-  in_progress: {
-    label: "In Progress",
-    color: "bg-violet-50 text-violet-700 border border-violet-200",
-    dot: "bg-violet-400",
-  },
-  completed: {
-    label: "Completed",
-    color: "bg-emerald-50 text-emerald-700 border border-emerald-200",
-    dot: "bg-emerald-500",
-  },
-  cancelled: {
-    label: "Cancelled",
-    color: "bg-red-50 text-red-700 border border-red-200",
-    dot: "bg-red-400",
-  },
+const initialForm = {
+  fullName: "",
+  email: "",
+  phone: "",
+  employeeId: "",
+  password: "",
 };
 
-/* ── Sub-components ── */
-const StatCard = ({ title, value, icon: Icon, accent }) => (
-  <div className="relative overflow-hidden rounded-2xl bg-white border border-slate-100 shadow-sm p-5 flex items-center gap-4 hover:shadow-md transition-all duration-200">
-    <div
-      className={`w-12 h-12 rounded-xl flex items-center justify-center shrink-0 ${accent}`}
-    >
-      <Icon size={20} />
-    </div>
-    <div className="flex-1 min-w-0">
-      <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider truncate">
-        {title}
-      </p>
-      <p className="text-2xl font-extrabold text-slate-800 mt-0.5 leading-tight">
-        {value}
-      </p>
-    </div>
-  </div>
-);
+const COLORS = ["#6366f1", "#e2e8f0"];
 
-const StatusBadge = ({ status }) => {
-  const cfg = statusConfig[status] || {
-    label: status || "unknown",
-    color: "bg-slate-100 text-slate-600 border border-slate-200",
-    dot: "bg-slate-400",
-  };
-  return (
-    <span
-      className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold ${cfg.color}`}
-    >
-      <span className={`w-1.5 h-1.5 rounded-full ${cfg.dot}`} />
-      {cfg.label}
-    </span>
-  );
-};
+export default function ManageSales() {
+  const [sales, setSales] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [modalMode, setModalMode] = useState(null); // 'create' | 'view' | 'edit' | 'delete'
+  const [selectedSale, setSelectedSale] = useState(null);
+  const [form, setForm] = useState(initialForm);
+  const [formErrors, setFormErrors] = useState({});
+  const [page, setPage] = useState(1);
+  const [search, setSearch] = useState("");
+  const [deleteLoading, setDeleteLoading] = useState(false);
+  const [bookings, setBookings] = useState([]);
+  const [bookingsLoading, setBookingsLoading] = useState(false);
+  const [bookingsModal, setBookingsModal] = useState(false);
 
-const LoadingSection = ({ text }) => (
-  <div className="flex min-h-40 items-center justify-center">
-    <div className="flex items-center gap-2.5 text-slate-400">
-      <Loader2 className="animate-spin" size={18} />
-      <span className="text-sm font-medium">{text}</span>
-    </div>
-  </div>
-);
-
-const EmptyState = ({ text, icon: Icon = Briefcase }) => (
-  <div className="flex flex-col min-h-40 items-center justify-center gap-3 rounded-2xl border border-dashed border-slate-200 bg-slate-50/50 text-slate-400">
-    <Icon size={28} className="text-slate-300" />
-    <p className="text-sm font-medium">{text}</p>
-  </div>
-);
-
-const FormInput = ({ label, required, children }) => (
-  <div className="space-y-1.5">
-    <label className="block text-sm font-semibold text-slate-600">
-      {label} {required && <span className="text-red-400">*</span>}
-    </label>
-    {children}
-  </div>
-);
-
-const inputCls =
-  "w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm text-slate-800 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 transition-all placeholder:text-slate-400 cursor-pointer";
-
-const backdropStyle = {
-  background: "rgba(15,23,42,0.5)",
-  backdropFilter: "blur(4px)",
-};
-const modalStyle = { animation: "modalIn .2s cubic-bezier(.34,1.56,.64,1)" };
-
-/* ═══════════ MAIN PAGE ═══════════ */
-const ManageSales = () => {
+  const perPage = 6;
   const token = localStorage.getItem("token");
-  const authHeaders = useMemo(
-    () => ({ headers: { Authorization: `Bearer ${token}` } }),
-    [token],
-  );
-
-  const [salesList, setSalesList] = useState([]);
-  const [assignments, setAssignments] = useState([]);
-  const [performance, setPerformance] = useState([]);
-  const [salesmanAssignments, setSalesmanAssignments] = useState([]);
-
-  const [loadingSales, setLoadingSales] = useState(false);
-  const [loadingAssignments, setLoadingAssignments] = useState(false);
-  const [loadingPerformance, setLoadingPerformance] = useState(false);
-  const [loadingSalesmanAssignments, setLoadingSalesmanAssignments] =
-    useState(false);
-
-  const [creatingSales, setCreatingSales] = useState(false);
-  const [updatingSalesId, setUpdatingSalesId] = useState(null);
-  const [deletingSalesId, setDeletingSalesId] = useState(null);
-  const [assigningSales, setAssigningSales] = useState(false);
-  const [updatingAssignmentId, setUpdatingAssignmentId] = useState(null);
-
-  const [salesForm, setSalesForm] = useState(initialSalesForm);
-  const [editingSalesId, setEditingSalesId] = useState(null);
-  const [assignForm, setAssignForm] = useState(initialAssignForm);
-  const [selectedSalesmanId, setSelectedSalesmanId] = useState("");
-  const [selectedAssignment, setSelectedAssignment] = useState(null);
-  const [statusForm, setStatusForm] = useState(initialStatusForm);
-  const [deleteModal, setDeleteModal] = useState({
-    open: false,
-    salesId: null,
-    salesName: "",
-  });
-  const [searchText, setSearchText] = useState("");
-
-  const filteredSales = useMemo(() => {
-    const term = searchText.toLowerCase().trim();
-    if (!term) return salesList;
-    return salesList.filter(
-      (s) =>
-        s?.fullName?.toLowerCase().includes(term) ||
-        s?.email?.toLowerCase().includes(term) ||
-        s?.phone?.toLowerCase().includes(term),
-    );
-  }, [salesList, searchText]);
 
   const fetchSales = async () => {
     try {
-      setLoadingSales(true);
+      setLoading(true);
       const { data } = await axios.get(
         `${import.meta.env.VITE_BACKEND_API_URL}/admin/sales`,
-        authHeaders,
+        { headers: { Authorization: `Bearer ${token}` } },
       );
-      setSalesList(data?.sales || []);
-    } catch (e) {
-      toast.error(e?.response?.data?.message || "Failed to fetch sales");
+      setSales(data.sales || []);
+    } catch {
+      toast.error("Failed to load sales team");
     } finally {
-      setLoadingSales(false);
-    }
-  };
-  const fetchAllAssignments = async () => {
-    try {
-      setLoadingAssignments(true);
-      const { data } = await axios.get(
-        `${import.meta.env.VITE_BACKEND_API_URL}/assignments/all`,
-        authHeaders,
-      );
-      setAssignments(data?.assignments || []);
-    } catch (e) {
-      toast.error(e?.response?.data?.message || "Failed to fetch assignments");
-    } finally {
-      setLoadingAssignments(false);
-    }
-  };
-  const fetchPerformance = async () => {
-    try {
-      setLoadingPerformance(true);
-      const { data } = await axios.get(
-        `${import.meta.env.VITE_BACKEND_API_URL}/assignments/performance`,
-        authHeaders,
-      );
-      setPerformance(data?.performance || []);
-    } catch (e) {
-      toast.error(e?.response?.data?.message || "Failed to fetch performance");
-    } finally {
-      setLoadingPerformance(false);
-    }
-  };
-  const fetchSalesmanAssignments = async (salesId) => {
-    if (!salesId) {
-      setSalesmanAssignments([]);
-      return;
-    }
-    try {
-      setLoadingSalesmanAssignments(true);
-      const { data } = await axios.get(
-        `${import.meta.env.VITE_BACKEND_API_URL}/assignments/sales/${salesId}`,
-        authHeaders,
-      );
-      setSalesmanAssignments(data?.assignments || []);
-    } catch (e) {
-      toast.error(
-        e?.response?.data?.message || "Failed to fetch salesman assignments",
-      );
-    } finally {
-      setLoadingSalesmanAssignments(false);
+      setLoading(false);
     }
   };
 
   useEffect(() => {
     fetchSales();
-    fetchAllAssignments();
-    fetchPerformance();
   }, []);
-  useEffect(() => {
-    if (selectedSalesmanId) fetchSalesmanAssignments(selectedSalesmanId);
-  }, [selectedSalesmanId]);
 
-  const refreshAll = () => {
-    fetchSales();
-    fetchAllAssignments();
-    fetchPerformance();
-    if (selectedSalesmanId) fetchSalesmanAssignments(selectedSalesmanId);
-  };
-
-  const resetSalesForm = () => {
-    setSalesForm(initialSalesForm);
-    setEditingSalesId(null);
-  };
-
-  const handleCreateOrUpdateSales = async (e) => {
-    e.preventDefault();
-    if (
-      !salesForm.fullName ||
-      !salesForm.phone ||
-      (!editingSalesId && !salesForm.email)
-    )
-      return toast.error("Please fill all required fields");
+  const fetchBookings = async (salesId) => {
     try {
-      if (editingSalesId) {
-        setUpdatingSalesId(editingSalesId);
-        await axios.put(
-          `${import.meta.env.VITE_BACKEND_API_URL}/admin/sales/${editingSalesId}`,
-          { fullName: salesForm.fullName, phone: salesForm.phone },
-          authHeaders,
-        );
-        toast.success("Sales updated successfully");
-      } else {
-        setCreatingSales(true);
-        await axios.post(
-          `${import.meta.env.VITE_BACKEND_API_URL}/admin/create-sales`,
-          salesForm,
-          authHeaders,
-        );
-        toast.success("Sales created successfully");
-      }
-      resetSalesForm();
-      fetchSales();
-      fetchPerformance();
-    } catch (e) {
-      toast.error(e?.response?.data?.message || "Operation failed");
-    } finally {
-      setCreatingSales(false);
-      setUpdatingSalesId(null);
-    }
-  };
-
-  const handleEditSales = (sales) => {
-    setEditingSalesId(sales?._id);
-    setSalesForm({
-      fullName: sales?.fullName || "",
-      email: sales?.email || "",
-      phone: sales?.phone || "",
-    });
-    window.scrollTo({ top: 0, behavior: "smooth" });
-  };
-
-  const confirmDeleteSales = async () => {
-    try {
-      setDeletingSalesId(deleteModal.salesId);
-      await axios.delete(
-        `${import.meta.env.VITE_BACKEND_API_URL}/admin/sales/${deleteModal.salesId}`,
-        authHeaders,
+      setBookingsLoading(true);
+      setBookings([]);
+      setBookingsModal(true);
+      const { data } = await axios.get(
+        `${import.meta.env.VITE_BACKEND_API_URL}/admin/sales/${salesId}`,
+        { headers: { Authorization: `Bearer ${token}` } },
       );
-      toast.success("Sales deleted successfully");
-      if (selectedSalesmanId === deleteModal.salesId) {
-        setSelectedSalesmanId("");
-        setSalesmanAssignments([]);
-      }
-      fetchSales();
-      fetchAllAssignments();
-      fetchPerformance();
-      setDeleteModal({ open: false, salesId: null, salesName: "" });
-    } catch (e) {
-      toast.error(e?.response?.data?.message || "Delete failed");
+      setBookings(data.bookings || []);
+    } catch {
+      toast.error("Failed to load bookings");
     } finally {
-      setDeletingSalesId(null);
+      setBookingsLoading(false);
     }
   };
 
-  const handleAssignSalesman = async (e) => {
-    e.preventDefault();
-    if (!assignForm.bookingId || !assignForm.salesmanId)
-      return toast.error("Booking ID and Salesman are required");
+  const validateForm = () => {
+    const errors = {};
+    if (!form.fullName.trim()) errors.fullName = "Full name is required";
+    if (!form.email.trim()) errors.email = "Email is required";
+    else if (!/\S+@\S+\.\S+/.test(form.email)) errors.email = "Invalid email";
+    if (!form.phone.trim()) errors.phone = "Phone is required";
+    if (!form.employeeId.trim()) errors.employeeId = "Employee ID is required";
+    if (modalMode === "create" && !form.password.trim())
+      errors.password = "Password is required";
+    else if (modalMode === "create" && form.password.trim().length < 6)
+      errors.password = "Password must be at least 6 characters";
+    setFormErrors(errors);
+    return Object.keys(errors).length === 0;
+  };
+
+  const handleCreate = async () => {
+    if (!validateForm()) return;
     try {
-      setAssigningSales(true);
       await axios.post(
-        `${import.meta.env.VITE_BACKEND_API_URL}/assignments/assign`,
-        assignForm,
-        authHeaders,
+        `${import.meta.env.VITE_BACKEND_API_URL}/admin/create-sales`,
+        form,
+        { headers: { Authorization: `Bearer ${token}` } },
       );
-      toast.success("Salesman assigned successfully");
-      setAssignForm(initialAssignForm);
-      fetchAllAssignments();
-      fetchPerformance();
-      if (selectedSalesmanId) fetchSalesmanAssignments(selectedSalesmanId);
-    } catch (e) {
-      toast.error(e?.response?.data?.message || "Assignment failed");
-    } finally {
-      setAssigningSales(false);
+      toast.success("Salesman created successfully");
+      closeModal();
+      fetchSales();
+    } catch (err) {
+      toast.error(err?.response?.data?.message || "Create failed");
     }
   };
 
-  const handleUpdateAssignmentStatus = async (e) => {
-    e.preventDefault();
-    if (!selectedAssignment?._id) return toast.error("No assignment selected");
+  const handleEdit = async () => {
+    if (!validateForm()) return;
     try {
-      setUpdatingAssignmentId(selectedAssignment._id);
       await axios.put(
-        `${import.meta.env.VITE_BACKEND_API_URL}/assignments/update/${selectedAssignment._id}`,
-        statusForm,
-        authHeaders,
+        `${import.meta.env.VITE_BACKEND_API_URL}/admin/sales/${selectedSale._id}`,
+        form,
+        { headers: { Authorization: `Bearer ${token}` } },
       );
-      toast.success("Assignment updated successfully");
-      setSelectedAssignment(null);
-      setStatusForm(initialStatusForm);
-      fetchAllAssignments();
-      fetchPerformance();
-      if (selectedSalesmanId) fetchSalesmanAssignments(selectedSalesmanId);
-    } catch (e) {
-      toast.error(e?.response?.data?.message || "Failed to update assignment");
-    } finally {
-      setUpdatingAssignmentId(null);
+      toast.success("Updated successfully");
+      closeModal();
+      fetchSales();
+    } catch (err) {
+      toast.error(err?.response?.data?.message || "Update failed");
     }
   };
 
-  const totalCompleted = assignments.filter(
-    (i) => i?.status === "completed",
-  ).length;
-  const totalPending = assignments.filter(
-    (i) => i?.status === "pending",
-  ).length;
+  const handleDelete = async () => {
+    try {
+      setDeleteLoading(true);
+      await axios.delete(
+        `${import.meta.env.VITE_BACKEND_API_URL}/admin/sales/${selectedSale._id}`,
+        { headers: { Authorization: `Bearer ${token}` } },
+      );
+      toast.success("Deleted successfully");
+      closeModal();
+      fetchSales();
+    } catch (err) {
+      toast.error(err?.response?.data?.message || "Delete failed");
+    } finally {
+      setDeleteLoading(false);
+    }
+  };
+
+  const openCreate = () => {
+    setForm(initialForm);
+    setFormErrors({});
+    setModalMode("create");
+  };
+
+  const openView = (s) => {
+    setSelectedSale(s);
+    setModalMode("view");
+  };
+
+  const openEdit = (s) => {
+    setSelectedSale(s);
+    setForm({
+      fullName: s.fullName || "",
+      email: s.email || "",
+      phone: s.phone || "",
+      employeeId: s.salesInfo?.employeeId || "",
+      password: "",
+    });
+    setFormErrors({});
+    setModalMode("edit");
+  };
+
+  const openDelete = (s) => {
+    setSelectedSale(s);
+    setModalMode("delete");
+  };
+
+  const closeModal = () => {
+    setModalMode(null);
+    setSelectedSale(null);
+    setForm(initialForm);
+    setFormErrors({});
+  };
+
+  const filtered = useMemo(() => {
+    if (!search.trim()) return sales;
+    const q = search.toLowerCase();
+    return sales.filter(
+      (s) =>
+        s.fullName?.toLowerCase().includes(q) ||
+        s.email?.toLowerCase().includes(q) ||
+        s.salesInfo?.employeeId?.toLowerCase().includes(q) ||
+        s.phone?.toLowerCase().includes(q),
+    );
+  }, [sales, search]);
+
+  const totalPages = Math.ceil(filtered.length / perPage);
+
+  const paginated = useMemo(() => {
+    const start = (page - 1) * perPage;
+    return filtered.slice(start, start + perPage);
+  }, [filtered, page]);
+
+  const assignedCount = sales.filter((s) => s.assigned).length;
+
+  const chartData = [
+    { name: "Total", value: sales.length },
+    { name: "Assigned", value: assignedCount },
+  ];
+
+  const statCards = [
+    {
+      label: "Total Salesmen",
+      value: sales.length,
+      icon: Users,
+      color: "bg-indigo-50 text-indigo-600",
+    },
+    {
+      label: "Assigned",
+      value: assignedCount,
+      icon: TrendingUp,
+      color: "bg-amber-50 text-amber-600",
+    },
+  ];
+
+  const fieldConfig = [
+    {
+      key: "fullName",
+      label: "Full Name",
+      icon: User,
+      type: "text",
+      placeholder: "e.g. Ahmed Rahman",
+    },
+    {
+      key: "email",
+      label: "Email Address",
+      icon: Mail,
+      type: "email",
+      placeholder: "e.g. ahmed@company.com",
+    },
+    {
+      key: "phone",
+      label: "Phone Number",
+      icon: Phone,
+      type: "tel",
+      placeholder: "e.g. +880 1700 000000",
+    },
+    {
+      key: "employeeId",
+      label: "Employee ID",
+      icon: BadgeCheck,
+      type: "text",
+      placeholder: "e.g. EMP-001",
+    },
+    ...(modalMode === "create"
+      ? [
+          {
+            key: "password",
+            label: "Password",
+            icon: null,
+            type: "password",
+            placeholder: "Min 6 characters",
+          },
+        ]
+      : []),
+  ];
 
   return (
-    <div className="min-h-screen bg-slate-50/80 p-4 md:p-6 space-y-6">
-      {/* PAGE HEADER */}
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="text-2xl font-extrabold text-slate-800 tracking-tight">
-            Sales Management
-          </h1>
-          <p className="text-sm text-slate-400 mt-1">
-            Manage sales accounts, assignments & performance
-          </p>
-        </div>
-        <button
-          onClick={refreshAll}
-          className="inline-flex cursor-pointer items-center gap-2 rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white hover:bg-slate-700 transition-all shadow-sm self-start sm:self-auto"
-        >
-          <RefreshCcw size={15} /> Refresh
-        </button>
-      </div>
-
-      {/* STATS */}
-      <div className="grid grid-cols-2 xl:grid-cols-4 gap-4">
-        <StatCard
-          title="Total Sales"
-          value={salesList.length}
-          icon={Users}
-          accent="bg-indigo-50 text-indigo-600"
-        />
-        <StatCard
-          title="Assignments"
-          value={assignments.length}
-          icon={Briefcase}
-          accent="bg-violet-50 text-violet-600"
-        />
-        <StatCard
-          title="Completed Deals"
-          value={totalCompleted}
-          icon={BadgeCheck}
-          accent="bg-emerald-50 text-emerald-600"
-        />
-        <StatCard
-          title="Pending Follow-up"
-          value={totalPending}
-          icon={UserCheck}
-          accent="bg-amber-50 text-amber-600"
-        />
-      </div>
-
-      {/* CREATE / ASSIGN */}
-      <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
-        <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-6 space-y-5">
-          <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-lg bg-indigo-50 flex items-center justify-center">
-              <UserCog size={16} className="text-indigo-600" />
-            </div>
-            <h2 className="font-bold text-slate-800">
-              {editingSalesId ? "Edit Sales Account" : "New Sales Account"}
-            </h2>
-          </div>
-          <form onSubmit={handleCreateOrUpdateSales} className="space-y-4">
-            <FormInput label="Full Name" required>
-              <input
-                type="text"
-                value={salesForm.fullName}
-                onChange={(e) =>
-                  setSalesForm((p) => ({ ...p, fullName: e.target.value }))
-                }
-                placeholder="Enter full name"
-                className={inputCls}
-              />
-            </FormInput>
-            <FormInput label="Email" required={!editingSalesId}>
-              <input
-                type="email"
-                value={salesForm.email}
-                onChange={(e) =>
-                  setSalesForm((p) => ({ ...p, email: e.target.value }))
-                }
-                placeholder="Enter email"
-                disabled={!!editingSalesId}
-                className={`${inputCls} ${editingSalesId ? "opacity-50 cursor-not-allowed!" : ""}`}
-              />
-              {editingSalesId && (
-                <p className="text-xs text-slate-400 mt-1">
-                  Email cannot be changed
-                </p>
-              )}
-            </FormInput>
-            <FormInput label="Phone" required>
-              <input
-                type="text"
-                value={salesForm.phone}
-                onChange={(e) =>
-                  setSalesForm((p) => ({ ...p, phone: e.target.value }))
-                }
-                placeholder="Enter phone number"
-                className={inputCls}
-              />
-            </FormInput>
-            <FormInput label="Password" required>
-              <input
-                type="password"
-                value={salesForm.password}
-                onChange={(e) =>
-                  setSalesForm((p) => ({ ...p, password: e.target.value }))
-                }
-                placeholder="Enter password"
-                className={inputCls}
-              />
-            </FormInput>
-            <div className="flex gap-2 pt-1">
-              <button
-                type="submit"
-                disabled={creatingSales || !!updatingSalesId}
-                className="flex-1 cursor-pointer inline-flex items-center justify-center gap-2 rounded-xl bg-[#131518] hover:bg-slate-800 duration-300 text-white text-sm font-semibold py-2.5 transition-all disabled:opacity-50"
-              >
-                {creatingSales || updatingSalesId ? (
-                  <Loader2 size={16} className="animate-spin" />
-                ) : editingSalesId ? (
-                  <Pencil size={16} />
-                ) : (
-                  <Plus size={16} />
-                )}
-                {editingSalesId ? "Update" : "Create Account"}
-              </button>
-              {editingSalesId && (
-                <button
-                  type="button"
-                  onClick={resetSalesForm}
-                  className="cursor-pointer inline-flex items-center gap-2 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-600 text-sm font-semibold px-4 py-2.5 transition-all"
-                >
-                  <X size={15} /> Cancel
-                </button>
-              )}
-            </div>
-          </form>
-        </div>
-
-        <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-6 space-y-5 xl:col-span-2">
-          <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-lg bg-amber-50 flex items-center justify-center">
-              <UserCheck size={16} className="text-amber-600" />
-            </div>
-            <h2 className="font-bold text-slate-800">Assign Salesman</h2>
-          </div>
-          <form
-            onSubmit={handleAssignSalesman}
-            className="grid grid-cols-1 md:grid-cols-2 gap-4"
+    <div
+      style={{ fontFamily: "'DM Sans', 'Segoe UI', sans-serif" }}
+      className="p-6 space-y-6 bg-slate-50 min-h-screen"
+    >
+      {/* Stat Cards */}
+      <div className="grid grid-cols-2 gap-4">
+        {statCards.map((card, i) => (
+          <div
+            key={i}
+            className="bg-white rounded-2xl border border-slate-100 shadow-sm p-5 flex items-center gap-4"
           >
-            <FormInput label="Booking ID" required>
-              <input
-                type="text"
-                value={assignForm.bookingId}
-                onChange={(e) =>
-                  setAssignForm((p) => ({ ...p, bookingId: e.target.value }))
-                }
-                placeholder="Enter booking ID"
-                className={inputCls}
-              />
-            </FormInput>
-            <FormInput label="Select Salesman" required>
-              <select
-                value={assignForm.salesmanId}
-                onChange={(e) =>
-                  setAssignForm((p) => ({ ...p, salesmanId: e.target.value }))
-                }
-                className={inputCls}
-              >
-                <option value="">Choose salesman</option>
-                {salesList.map((s) => (
-                  <option key={s._id} value={s._id}>
-                    {s.fullName} — {s.email}
-                  </option>
-                ))}
-              </select>
-            </FormInput>
-            <div className="md:col-span-2">
-              <FormInput label="Note">
-                <textarea
-                  value={assignForm.note}
-                  onChange={(e) =>
-                    setAssignForm((p) => ({ ...p, note: e.target.value }))
-                  }
-                  rows={3}
-                  placeholder="Write an assignment note (optional)"
-                  className={inputCls}
-                />
-              </FormInput>
-            </div>
-            <div className="md:col-span-2">
-              <button
-                type="submit"
-                disabled={assigningSales}
-                className="cursor-pointer inline-flex duration-300 items-center gap-2 rounded-xl bg-[#ebb93a] hover:bg-[#daa624] text-[#131518] text-sm font-semibold px-5 py-2.5 transition-all disabled:opacity-50 shadow-md hover:shadow-lg"
-              >
-                {assigningSales ? (
-                  <Loader2 size={16} className="animate-spin" />
-                ) : (
-                  <UserCheck size={16} />
-                )}
-                Assign Salesman
-              </button>
-            </div>
-          </form>
-        </div>
-      </div>
-
-      {/* SALES TEAM */}
-      <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-6 space-y-5">
-        <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:justify-between">
-          <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center">
-              <Users size={16} className="text-slate-600" />
+            <div className={`rounded-xl p-3 ${card.color}`}>
+              <card.icon size={20} />
             </div>
             <div>
-              <h2 className="font-bold text-slate-800">Sales Team</h2>
-              <p className="text-xs text-slate-400">
-                {salesList.length} member{salesList.length !== 1 ? "s" : ""}
+              <p className="text-xs font-medium text-slate-400 uppercase tracking-wide">
+                {card.label}
               </p>
+              <h2 className="text-2xl font-bold text-slate-800">
+                {card.value}
+              </h2>
             </div>
           </div>
-          <div className="relative w-full sm:w-72">
+        ))}
+      </div>
+
+      {/* Header Row */}
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+        <div>
+          <h2 className="text-xl font-bold text-slate-800">Sales Team</h2>
+          <p className="text-sm text-slate-400">{sales.length} members total</p>
+        </div>
+        <div className="flex gap-3 w-full sm:w-auto">
+          {/* Search */}
+          <div className="relative flex-1 sm:flex-none">
             <Search
-              size={14}
+              size={15}
               className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
             />
             <input
-              type="text"
-              value={searchText}
-              onChange={(e) => setSearchText(e.target.value)}
-              placeholder="Search by name, email or phone…"
-              className={`${inputCls} pl-9`}
+              value={search}
+              onChange={(e) => {
+                setSearch(e.target.value);
+                setPage(1);
+              }}
+              placeholder="Search by name, email..."
+              className="pl-9 pr-4 py-2.5 text-sm border border-slate-200 rounded-xl bg-white w-full sm:w-64 focus:outline-none focus:ring-2 focus:ring-indigo-300"
             />
           </div>
+          <button
+            onClick={openCreate}
+            className="cursor-pointer flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 transition-colors text-white px-4 py-2.5 rounded-xl text-sm font-medium whitespace-nowrap shadow-sm"
+          >
+            <Plus size={16} /> Add Salesman
+          </button>
         </div>
-        {loadingSales ? (
-          <LoadingSection text="Loading sales team…" />
-        ) : filteredSales.length === 0 ? (
-          <EmptyState text="No sales account found" icon={Users} />
-        ) : (
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
-            {filteredSales.map((sales) => (
-              <div
-                key={sales._id}
-                className="group flex items-start justify-between gap-4 rounded-xl border border-slate-100 bg-slate-50/60 hover:bg-white hover:shadow-sm hover:border-slate-200 p-4 transition-all duration-150"
-              >
-                <div className="space-y-1.5 min-w-0">
-                  <div className="flex items-center gap-2">
-                    <div className="w-8 h-8 rounded-full bg-indigo-100 text-indigo-700 flex items-center justify-center text-sm font-bold shrink-0">
-                      {sales.fullName?.charAt(0)?.toUpperCase() || "S"}
-                    </div>
-                    <h3 className="font-bold text-slate-800 truncate">
-                      {sales.fullName}
-                    </h3>
-                  </div>
-                  <p className="flex items-center gap-1.5 text-xs text-slate-500">
-                    <Mail size={12} className="shrink-0" />
-                    {sales.email}
-                  </p>
-                  <p className="flex items-center gap-1.5 text-xs text-slate-500">
-                    <Phone size={12} className="shrink-0" />
-                    {sales.phone}
-                  </p>
-                  <span className="inline-block bg-emerald-50 text-emerald-700 border border-emerald-200 text-xs font-semibold px-2.5 py-0.5 rounded-full capitalize">
-                    {sales.role}
-                  </span>
-                </div>
-                <div className="flex flex-col gap-2 shrink-0">
-                  <button
-                    onClick={() => handleEditSales(sales)}
-                    className="cursor-pointer inline-flex items-center gap-1.5 rounded-lg bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200 px-3 py-1.5 text-xs font-semibold transition-all"
-                  >
-                    <Pencil size={13} /> Edit
-                  </button>
-                  <button
-                    onClick={() =>
-                      setDeleteModal({
-                        open: true,
-                        salesId: sales._id,
-                        salesName: sales.fullName,
-                      })
-                    }
-                    disabled={deletingSalesId === sales._id}
-                    className="cursor-pointer inline-flex items-center gap-1.5 rounded-lg bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 px-3 py-1.5 text-xs font-semibold transition-all disabled:opacity-50"
-                  >
-                    {deletingSalesId === sales._id ? (
-                      <Loader2 size={13} className="animate-spin" />
-                    ) : (
-                      <Trash2 size={13} />
-                    )}
-                    Delete
-                  </button>
-                </div>
-              </div>
-            ))}
+      </div>
+
+      {/* Table */}
+      <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+        {loading ? (
+          <div className="flex items-center justify-center py-20 text-slate-400 text-sm">
+            <div className="w-6 h-6 border-2 border-indigo-300 border-t-indigo-600 rounded-full animate-spin mr-3" />
+            Loading sales team...
           </div>
+        ) : paginated.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-20 text-slate-400">
+            <Users size={40} className="mb-3 opacity-30" />
+            <p className="text-sm font-medium">No salesmen found</p>
+            <p className="text-xs mt-1">
+              Try a different search or add a new salesman
+            </p>
+          </div>
+        ) : (
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="bg-slate-50 border-b border-slate-100">
+                <th className="text-left px-5 py-3.5 text-xs font-semibold text-slate-500 uppercase tracking-wide">
+                  Name
+                </th>
+                <th className="text-left px-4 py-3.5 text-xs font-semibold text-slate-500 uppercase tracking-wide hidden md:table-cell">
+                  Email
+                </th>
+                <th className="text-left px-4 py-3.5 text-xs font-semibold text-slate-500 uppercase tracking-wide hidden lg:table-cell">
+                  Phone
+                </th>
+                <th className="text-left px-4 py-3.5 text-xs font-semibold text-slate-500 uppercase tracking-wide">
+                  Employee ID
+                </th>
+                <th className="text-center px-4 py-3.5 text-xs font-semibold text-slate-500 uppercase tracking-wide hidden sm:table-cell">
+                  Bookings
+                </th>
+                <th className="text-center px-4 py-3.5 text-xs font-semibold text-slate-500 uppercase tracking-wide">
+                  Actions
+                </th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-50">
+              {paginated.map((s) => (
+                <tr
+                  key={s._id}
+                  className="hover:bg-slate-50/70 transition-colors"
+                >
+                  <td className="px-5 py-4">
+                    <div className="flex items-center gap-3">
+                      <div className="w-8 h-8 rounded-full bg-indigo-100 text-indigo-600 flex items-center justify-center font-semibold text-xs shrink-0">
+                        {s.fullName?.charAt(0)?.toUpperCase() || "?"}
+                      </div>
+                      <span className="font-medium text-slate-800 truncate max-w-[120px]">
+                        {s.fullName}
+                      </span>
+                    </div>
+                  </td>
+                  <td className="px-4 py-4 text-slate-500 hidden md:table-cell truncate max-w-[160px]">
+                    {s.email}
+                  </td>
+                  <td className="px-4 py-4 text-slate-500 hidden lg:table-cell">
+                    {s.phone}
+                  </td>
+                  <td className="px-4 py-4">
+                    <span className="inline-flex items-center gap-1 bg-slate-100 text-slate-600 text-xs font-mono font-medium px-2.5 py-1 rounded-lg">
+                      {s.salesInfo?.employeeId || "—"}
+                    </span>
+                  </td>
+                  <td className="px-4 py-4 hidden sm:table-cell">
+                    <div className="flex justify-center">
+                      <button
+                        onClick={() => {
+                          setSelectedSale(s);
+                          fetchBookings(s.salesInfo?.employeeId);
+                        }}
+                        className="cursor-pointer inline-flex items-center gap-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-600 text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors"
+                      >
+                        <BookOpen size={12} />
+                        {s.bookings?.length ?? 0} Bookings
+                      </button>
+                    </div>
+                  </td>
+                  <td className="px-4 py-4">
+                    <div className="flex items-center justify-center gap-1.5">
+                      <button
+                        onClick={() => openView(s)}
+                        title="View"
+                        className="cursor-pointer p-2 rounded-lg text-slate-500 hover:bg-indigo-50 hover:text-indigo-600 transition-colors"
+                      >
+                        <Eye size={15} />
+                      </button>
+                      <button
+                        onClick={() => openEdit(s)}
+                        title="Edit"
+                        className="cursor-pointer p-2 rounded-lg text-slate-500 hover:bg-amber-50 hover:text-amber-600 transition-colors"
+                      >
+                        <Pencil size={15} />
+                      </button>
+                      <button
+                        onClick={() => openDelete(s)}
+                        title="Delete"
+                        className="cursor-pointer p-2 rounded-lg text-slate-500 hover:bg-red-50 hover:text-red-600 transition-colors"
+                      >
+                        <Trash2 size={15} />
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         )}
       </div>
 
-      {/* ASSIGNMENTS */}
-      <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
-        <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-6 space-y-4">
-          <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-lg bg-violet-50 flex items-center justify-center">
-              <Briefcase size={16} className="text-violet-600" />
-            </div>
-            <div>
-              <h2 className="font-bold text-slate-800">All Assignments</h2>
-              <p className="text-xs text-slate-400">
-                {assignments.length} total
-              </p>
-            </div>
+      {/* Pagination */}
+      {totalPages > 1 && (
+        <div className="flex items-center justify-between">
+          <p className="text-sm text-slate-400">
+            Showing {(page - 1) * perPage + 1}–
+            {Math.min(page * perPage, filtered.length)} of {filtered.length}
+          </p>
+          <div className="flex items-center gap-1">
+            <button
+              disabled={page === 1}
+              onClick={() => setPage((p) => p - 1)}
+              className="cursor-pointer p-2 rounded-lg hover:bg-white border border-transparent hover:border-slate-200 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+            >
+              <ChevronLeft size={16} />
+            </button>
+            {Array.from({ length: totalPages }).map((_, i) => (
+              <button
+                key={i}
+                onClick={() => setPage(i + 1)}
+                className={`cursor-pointer w-9 h-9 rounded-lg text-sm font-medium transition-all ${
+                  page === i + 1
+                    ? "bg-indigo-600 text-white shadow-sm"
+                    : "text-slate-600 hover:bg-white hover:border hover:border-slate-200"
+                }`}
+              >
+                {i + 1}
+              </button>
+            ))}
+            <button
+              disabled={page === totalPages}
+              onClick={() => setPage((p) => p + 1)}
+              className="cursor-pointer p-2 rounded-lg hover:bg-white border border-transparent hover:border-slate-200 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+            >
+              <ChevronRight size={16} />
+            </button>
           </div>
-          {loadingAssignments ? (
-            <LoadingSection text="Loading assignments…" />
-          ) : assignments.length === 0 ? (
-            <EmptyState text="No assignments found" />
-          ) : (
-            <div className="space-y-3 max-h-130 overflow-y-auto pr-1">
-              {assignments.map((item) => (
-                <div
-                  key={item._id}
-                  className="rounded-xl border border-slate-100 bg-slate-50/50 hover:bg-white hover:shadow-sm hover:border-slate-200 p-4 transition-all duration-150"
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="space-y-1 min-w-0">
-                      <p className="font-semibold text-slate-800 text-sm truncate">
-                        {item?.clientId?.fullName || "N/A"}
-                      </p>
-                      <p className="text-xs text-slate-500 flex items-center gap-1">
-                        <UserCheck size={11} />{" "}
-                        {item?.salesmanId?.fullName || "N/A"}
-                      </p>
-                      <p className="text-xs text-slate-400 font-mono truncate">
-                        #{item?.bookingId?._id?.slice(-8) || "N/A"}
-                      </p>
-                      {item?.note && (
-                        <p className="text-xs text-slate-500 italic truncate">
-                          "{item.note}"
+        </div>
+      )}
+
+      {/* Chart */}
+      <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-6">
+        <h3 className="text-sm font-semibold text-slate-700 mb-4">
+          Active vs Inactive
+        </h3>
+        <div className="h-52">
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart data={chartData} barSize={48}>
+              <XAxis
+                dataKey="name"
+                axisLine={false}
+                tickLine={false}
+                tick={{ fontSize: 12, fill: "#94a3b8" }}
+              />
+              <YAxis
+                axisLine={false}
+                tickLine={false}
+                tick={{ fontSize: 12, fill: "#94a3b8" }}
+                allowDecimals={false}
+              />
+              <Tooltip
+                contentStyle={{
+                  borderRadius: 12,
+                  border: "1px solid #e2e8f0",
+                  boxShadow: "0 4px 20px rgba(0,0,0,0.06)",
+                  fontSize: 13,
+                }}
+                cursor={{ fill: "#f8fafc" }}
+              />
+              <Bar dataKey="value" radius={[8, 8, 0, 0]}>
+                {chartData.map((_, index) => (
+                  <Cell
+                    key={index}
+                    fill={index === 0 ? "#6366f1" : "#e2e8f0"}
+                  />
+                ))}
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      </div>
+
+      {/* ── CREATE / EDIT MODAL ── */}
+      {(modalMode === "create" || modalMode === "edit") && (
+        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl w-full max-w-lg shadow-2xl">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between px-6 py-5 border-b border-slate-100">
+              <div>
+                <h2 className="font-bold text-slate-800 text-lg">
+                  {modalMode === "create"
+                    ? "Add New Salesman"
+                    : "Edit Salesman"}
+                </h2>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  {modalMode === "create"
+                    ? "Fill in the details below"
+                    : `Editing ${selectedSale?.fullName}`}
+                </p>
+              </div>
+              <button
+                onClick={closeModal}
+                className="cursor-pointer p-2 rounded-xl hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-colors"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* Form */}
+            <div className="px-6 py-5">
+              <div className="grid grid-cols-2 gap-4">
+                {fieldConfig.map(
+                  ({ key, label, icon: Icon, type, placeholder }) => (
+                    <div
+                      key={key}
+                      className={key === "password" ? "col-span-2" : ""}
+                    >
+                      <label className="block text-xs font-semibold text-slate-600 mb-1.5 uppercase tracking-wide">
+                        {label}
+                      </label>
+                      <div className="relative">
+                        {Icon && (
+                          <Icon
+                            size={15}
+                            className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400"
+                          />
+                        )}
+                        <input
+                          type={type}
+                          placeholder={placeholder}
+                          value={form[key]}
+                          onChange={(e) => {
+                            setForm({ ...form, [key]: e.target.value });
+                            if (formErrors[key])
+                              setFormErrors({ ...formErrors, [key]: "" });
+                          }}
+                          className={`w-full border rounded-xl py-2.5 text-sm text-slate-800 focus:outline-none focus:ring-2 transition-all ${
+                            Icon ? "pl-10 pr-4" : "px-4"
+                          } ${
+                            formErrors[key]
+                              ? "border-red-300 focus:ring-red-200"
+                              : "border-slate-200 focus:ring-indigo-200 focus:border-indigo-400"
+                          }`}
+                        />
+                      </div>
+                      {formErrors[key] && (
+                        <p className="text-xs text-red-500 mt-1">
+                          {formErrors[key]}
                         </p>
                       )}
-                      <div className="pt-1">
-                        <StatusBadge status={item?.status} />
+                    </div>
+                  ),
+                )}
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="flex gap-3 px-6 py-4 border-t border-slate-100">
+              <button
+                onClick={closeModal}
+                className="cursor-pointer flex-1 py-2.5 rounded-xl border border-slate-200 text-sm font-medium text-slate-600 hover:bg-slate-50 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={modalMode === "create" ? handleCreate : handleEdit}
+                className="cursor-pointer flex-1 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium transition-colors shadow-sm"
+              >
+                {modalMode === "create" ? "Create Salesman" : "Save Changes"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── VIEW MODAL ── */}
+      {modalMode === "view" && selectedSale && (
+        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl">
+            {/* Header */}
+            <div className="flex items-center justify-between px-6 py-5 border-b border-slate-100">
+              <h2 className="font-bold text-slate-800 text-lg">
+                Salesman Profile
+              </h2>
+              <button
+                onClick={closeModal}
+                className="cursor-pointer p-2 rounded-xl hover:bg-slate-100 text-slate-400 transition-colors"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* Avatar + Name */}
+            <div className="flex flex-col items-center pt-6 pb-4 px-6">
+              <div className="w-16 h-16 rounded-2xl bg-indigo-100 text-indigo-600 flex items-center justify-center text-2xl font-bold mb-3">
+                {selectedSale.fullName?.charAt(0)?.toUpperCase() || "?"}
+              </div>
+              <h3 className="text-lg font-bold text-slate-800">
+                {selectedSale.fullName}
+              </h3>
+            </div>
+
+            {/* Details Grid */}
+            <div className="px-6 pb-4 grid grid-cols-2 gap-3">
+              {[
+                {
+                  icon: BadgeCheck,
+                  label: "Employee ID",
+                  value: selectedSale.salesInfo?.employeeId,
+                },
+                { icon: Mail, label: "Email", value: selectedSale.email },
+                { icon: Phone, label: "Phone", value: selectedSale.phone },
+                {
+                  icon: TrendingUp,
+                  label: "Assigned",
+                  value: selectedSale.assigned ? "Yes" : "No",
+                },
+              ].map(({ icon: Icon, label, value }) => (
+                <div
+                  key={label}
+                  className="flex items-start gap-3 p-3 bg-slate-50 rounded-xl"
+                >
+                  <div className="w-8 h-8 rounded-lg bg-white border border-slate-100 flex items-center justify-center shrink-0 mt-0.5">
+                    <Icon size={15} className="text-indigo-500" />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-xs text-slate-400">{label}</p>
+                    <p className="text-sm font-medium text-slate-700 truncate">
+                      {value || "—"}
+                    </p>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Footer */}
+            <div className="flex gap-3 px-6 py-4 border-t border-slate-100">
+              <button
+                onClick={closeModal}
+                className="cursor-pointer flex-1 py-2.5 rounded-xl border border-slate-200 text-sm font-medium text-slate-600 hover:bg-slate-50 transition-colors"
+              >
+                Close
+              </button>
+              <button
+                onClick={() => {
+                  closeModal();
+                  setTimeout(() => openEdit(selectedSale), 50);
+                }}
+                className="cursor-pointer flex-1 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium transition-colors"
+              >
+                Edit Profile
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── DELETE MODAL ── */}
+      {modalMode === "delete" && selectedSale && (
+        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl w-full max-w-sm shadow-2xl">
+            <div className="p-6 text-center">
+              <div className="w-14 h-14 rounded-2xl bg-red-50 flex items-center justify-center mx-auto mb-4">
+                <Trash2 size={22} className="text-red-500" />
+              </div>
+              <h2 className="text-lg font-bold text-slate-800 mb-1">
+                Delete Salesman
+              </h2>
+              <p className="text-sm text-slate-500">
+                Are you sure you want to delete{" "}
+                <span className="font-semibold text-slate-700">
+                  {selectedSale.fullName}
+                </span>
+                ? This action cannot be undone.
+              </p>
+            </div>
+            <div className="flex gap-3 px-6 pb-6">
+              <button
+                onClick={closeModal}
+                className="cursor-pointer flex-1 py-2.5 rounded-xl border border-slate-200 text-sm font-medium text-slate-600 hover:bg-slate-50 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleDelete}
+                disabled={deleteLoading}
+                className="cursor-pointer flex-1 py-2.5 rounded-xl bg-red-500 hover:bg-red-600 disabled:opacity-60 text-white text-sm font-medium transition-colors"
+              >
+                {deleteLoading ? "Deleting..." : "Yes, Delete"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* ── BOOKINGS MODAL ── */}
+      {bookingsModal && selectedSale && (
+        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl w-full max-w-2xl shadow-2xl flex flex-col max-h-[85vh]">
+            {/* Header */}
+            <div className="flex items-center justify-between px-6 py-5 border-b border-slate-100 shrink-0">
+              <div>
+                <h2 className="font-bold text-slate-800 text-lg">Bookings</h2>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  {selectedSale.fullName} &middot;{" "}
+                  {selectedSale.salesInfo?.employeeId}
+                </p>
+              </div>
+              <button
+                onClick={() => {
+                  setBookingsModal(false);
+                  setBookings([]);
+                  setSelectedSale(null);
+                }}
+                className="cursor-pointer p-2 rounded-xl hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-colors"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* Body */}
+            <div className="overflow-y-auto px-6 py-5 space-y-4 flex-1">
+              {bookingsLoading ? (
+                <div className="flex flex-col items-center justify-center py-16 text-slate-400">
+                  <div className="w-7 h-7 border-2 border-indigo-300 border-t-indigo-600 rounded-full animate-spin mb-3" />
+                  <p className="text-sm">Loading bookings...</p>
+                </div>
+              ) : bookings.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-16 text-slate-400">
+                  <BookOpen size={36} className="mb-3 opacity-30" />
+                  <p className="text-sm font-medium">No bookings found</p>
+                  <p className="text-xs mt-1">
+                    This salesman has no bookings yet
+                  </p>
+                </div>
+              ) : (
+                bookings.map((b, idx) => (
+                  <div
+                    key={b._id}
+                    className="border border-slate-100 rounded-2xl overflow-hidden"
+                  >
+                    {/* Booking card header */}
+                    <div className="bg-slate-50 px-4 py-3 flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <span className="w-6 h-6 rounded-full bg-indigo-100 text-indigo-600 flex items-center justify-center text-xs font-bold">
+                          {idx + 1}
+                        </span>
+                        <span className="text-sm font-semibold text-slate-700">
+                          {b.generalInformation?.fullNameEn || "N/A"}
+                        </span>
+                        <span className="text-xs text-slate-400 font-mono">
+                          · {b.paymentSchedule?.clientId}
+                        </span>
+                      </div>
+                      <span
+                        className={`text-xs font-semibold px-2.5 py-1 rounded-full capitalize ${
+                          b.status === "pending"
+                            ? "bg-amber-50 text-amber-600"
+                            : b.status === "approved"
+                              ? "bg-emerald-50 text-emerald-600"
+                              : "bg-red-50 text-red-500"
+                        }`}
+                      >
+                        {b.status}
+                      </span>
+                    </div>
+
+                    {/* Booking details grid */}
+                    <div className="px-4 py-4 grid grid-cols-2 gap-3">
+                      <div className="flex items-center gap-2.5">
+                        <div className="w-7 h-7 rounded-lg bg-indigo-50 flex items-center justify-center shrink-0">
+                          <Phone size={12} className="text-indigo-500" />
+                        </div>
+                        <div>
+                          <p className="text-xs text-slate-400">Mobile</p>
+                          <p className="text-sm font-medium text-slate-700">
+                            {b.generalInformation?.mobile1 || "—"}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2.5">
+                        <div className="w-7 h-7 rounded-lg bg-indigo-50 flex items-center justify-center shrink-0">
+                          <CreditCard size={12} className="text-indigo-500" />
+                        </div>
+                        <div>
+                          <p className="text-xs text-slate-400">Total Price</p>
+                          <p className="text-sm font-medium text-slate-700">
+                            ৳
+                            {b.paymentSchedule?.totalPrice?.toLocaleString() ||
+                              "—"}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2.5">
+                        <div className="w-7 h-7 rounded-lg bg-indigo-50 flex items-center justify-center shrink-0">
+                          <TrendingUp size={12} className="text-indigo-500" />
+                        </div>
+                        <div>
+                          <p className="text-xs text-slate-400">
+                            Shares · Price/Share
+                          </p>
+                          <p className="text-sm font-medium text-slate-700">
+                            {b.paymentSchedule?.numberOfShare} &times; ৳
+                            {b.paymentSchedule?.sharePrice?.toLocaleString()}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2.5">
+                        <div className="w-7 h-7 rounded-lg bg-indigo-50 flex items-center justify-center shrink-0">
+                          <Calendar size={12} className="text-indigo-500" />
+                        </div>
+                        <div>
+                          <p className="text-xs text-slate-400">Booked On</p>
+                          <p className="text-sm font-medium text-slate-700">
+                            {new Date(b.createdAt).toLocaleDateString("en-GB", {
+                              day: "2-digit",
+                              month: "short",
+                              year: "numeric",
+                            })}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2.5 col-span-2">
+                        <div className="w-7 h-7 rounded-lg bg-indigo-50 flex items-center justify-center shrink-0">
+                          <Mail size={12} className="text-indigo-500" />
+                        </div>
+                        <div>
+                          <p className="text-xs text-slate-400">Email</p>
+                          <p className="text-sm font-medium text-slate-700">
+                            {b.generalInformation?.email || "—"}
+                          </p>
+                        </div>
                       </div>
                     </div>
-                    <button
-                      onClick={() => {
-                        setSelectedAssignment(item);
-                        setStatusForm({
-                          status: item?.status || "pending",
-                          note: item?.note || "",
-                        });
-                      }}
-                      className="cursor-pointer shrink-0 inline-flex items-center gap-1 rounded-lg bg-slate-900 hover:bg-slate-700 text-white text-xs font-semibold px-3 py-1.5 transition-all"
-                    >
-                      <Pencil size={11} /> Update
-                    </button>
                   </div>
-                </div>
-              ))}
+                ))
+              )}
             </div>
-          )}
-        </div>
 
-        <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-6 space-y-4">
-          <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:justify-between">
-            <div className="flex items-center gap-2.5">
-              <div className="w-8 h-8 rounded-lg bg-emerald-50 flex items-center justify-center">
-                <UserCheck size={16} className="text-emerald-600" />
-              </div>
-              <h2 className="font-bold text-slate-800">By Salesman</h2>
-            </div>
-            <select
-              value={selectedSalesmanId}
-              onChange={(e) => setSelectedSalesmanId(e.target.value)}
-              className={`${inputCls} w-full sm:w-56`}
-            >
-              <option value="">Select salesman…</option>
-              {salesList.map((s) => (
-                <option key={s._id} value={s._id}>
-                  {s.fullName}
-                </option>
-              ))}
-            </select>
-          </div>
-          {!selectedSalesmanId ? (
-            <EmptyState
-              text="Select a salesman to view assignments"
-              icon={UserCheck}
-            />
-          ) : loadingSalesmanAssignments ? (
-            <LoadingSection text="Loading assignments…" />
-          ) : salesmanAssignments.length === 0 ? (
-            <EmptyState text="No assignments for this salesman" />
-          ) : (
-            <div className="space-y-3 max-h-130 overflow-y-auto pr-1">
-              {salesmanAssignments.map((item) => (
-                <div
-                  key={item._id}
-                  className="rounded-xl border border-slate-100 bg-slate-50/50 hover:bg-white hover:border-slate-200 p-4 transition-all duration-150 space-y-1.5"
-                >
-                  <p className="font-semibold text-slate-800 text-sm">
-                    {item?.clientId?.fullName || "N/A"}
-                  </p>
-                  <p className="text-xs text-slate-500 flex items-center gap-1.5">
-                    <Mail size={11} /> {item?.clientId?.email || "N/A"}
-                  </p>
-                  <p className="text-xs text-slate-500 flex items-center gap-1.5">
-                    <Phone size={11} /> {item?.clientId?.phone || "N/A"}
-                  </p>
-                  <p className="text-xs text-slate-400 font-mono">
-                    #{item?.bookingId?._id?.slice(-8) || "N/A"}
-                  </p>
-                  {item?.note && (
-                    <p className="text-xs text-slate-500 italic">
-                      "{item.note}"
-                    </p>
-                  )}
-                  <StatusBadge status={item?.status} />
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* PERFORMANCE */}
-      <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-6 space-y-5">
-        <div className="flex items-center gap-2.5">
-          <div className="w-8 h-8 rounded-lg bg-teal-50 flex items-center justify-center">
-            <TrendingUp size={16} className="text-teal-600" />
-          </div>
-          <div>
-            <h2 className="font-bold text-slate-800">Sales Performance</h2>
-            <p className="text-xs text-slate-400">Deal completion overview</p>
-          </div>
-        </div>
-        {loadingPerformance ? (
-          <LoadingSection text="Loading performance…" />
-        ) : performance.length === 0 ? (
-          <EmptyState text="No performance data found" icon={BarChart3} />
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="bg-slate-50">
-                  {["#", "Salesman", "Email", "Total Clients", "Completed"].map(
-                    (h) => (
-                      <th
-                        key={h}
-                        className="px-4 py-3 text-left text-xs font-bold text-slate-500 uppercase tracking-wider"
-                      >
-                        {h}
-                      </th>
-                    ),
-                  )}
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-50">
-                {performance.map((item, i) => {
-                  const rate = item?.totalClients
-                    ? Math.round(
-                        (item.completedDeals / item.totalClients) * 100,
-                      )
-                    : 0;
-                  return (
-                    <tr
-                      key={item?._id || i}
-                      className="hover:bg-slate-50/60 transition-colors"
-                    >
-                      <td className="px-4 py-3 text-xs text-slate-400 font-mono">
-                        {i + 1}
-                      </td>
-                      <td className="px-4 py-3">
-                        <div className="flex items-center gap-2">
-                          <div className="w-7 h-7 rounded-full bg-indigo-100 text-indigo-700 flex items-center justify-center text-xs font-bold shrink-0">
-                            {item?.sales?.fullName?.charAt(0)?.toUpperCase() ||
-                              "?"}
-                          </div>
-                          <span className="font-semibold text-slate-700">
-                            {item?.sales?.fullName || "N/A"}
-                          </span>
-                        </div>
-                      </td>
-                      <td className="px-4 py-3 text-slate-500 text-xs">
-                        {item?.sales?.email || "N/A"}
-                      </td>
-                      <td className="px-4 py-3">
-                        <span className="inline-flex items-center gap-1 bg-indigo-50 text-indigo-700 text-xs font-bold px-2.5 py-1 rounded-full">
-                          <Users size={10} /> {item?.totalClients || 0}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3">
-                        <div className="flex items-center gap-2">
-                          <span className="inline-flex items-center gap-1 bg-emerald-50 text-emerald-700 text-xs font-bold px-2.5 py-1 rounded-full">
-                            <BadgeCheck size={10} /> {item?.completedDeals || 0}
-                          </span>
-                          {item?.totalClients > 0 && (
-                            <span className="text-xs text-slate-400">
-                              {rate}%
-                            </span>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
-
-      {/* keyframes */}
-      <style>{`
-        @keyframes modalIn {
-          from { opacity: 0; transform: scale(.93) translateY(10px); }
-          to   { opacity: 1; transform: scale(1)   translateY(0);    }
-        }
-      `}</style>
-
-      {/* ── MODALS — rendered into document.body via Portal (zero layout impact) ── */}
-
-      {selectedAssignment &&
-        createPortal(
-          <div
-            className="fixed inset-0 z-50 flex items-center justify-center p-4"
-            style={backdropStyle}
-            onClick={(e) =>
-              e.target === e.currentTarget && setSelectedAssignment(null)
-            }
-          >
-            <div
-              className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden"
-              style={modalStyle}
-            >
-              <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
-                <div className="flex items-center gap-3">
-                  <div className="w-8 h-8 rounded-xl bg-violet-50 flex items-center justify-center">
-                    <Activity size={15} className="text-violet-600" />
-                  </div>
-                  <div>
-                    <h3 className="font-bold text-slate-800 text-sm">
-                      Update Assignment
-                    </h3>
-                    <p className="text-xs text-slate-400">
-                      {selectedAssignment?.clientId?.fullName || "Client"}
-                    </p>
-                  </div>
-                </div>
+            {/* Footer */}
+            {!bookingsLoading && bookings.length > 0 && (
+              <div className="px-6 py-4 border-t border-slate-100 shrink-0 flex items-center justify-between">
+                <p className="text-xs text-slate-400">
+                  Total{" "}
+                  <span className="font-semibold text-slate-600">
+                    {bookings.length}
+                  </span>{" "}
+                  booking{bookings.length !== 1 ? "s" : ""}
+                </p>
                 <button
-                  onClick={() => setSelectedAssignment(null)}
-                  className="cursor-pointer w-8 h-8 flex items-center justify-center rounded-xl hover:bg-slate-100 text-slate-400 transition-all"
+                  onClick={() => {
+                    setBookingsModal(false);
+                    setBookings([]);
+                    setSelectedSale(null);
+                  }}
+                  className="cursor-pointer px-4 py-2 rounded-xl border border-slate-200 text-sm font-medium text-slate-600 hover:bg-slate-50 transition-colors"
                 >
-                  <X size={16} />
+                  Close
                 </button>
               </div>
-              <form
-                onSubmit={handleUpdateAssignmentStatus}
-                className="p-6 space-y-4"
-              >
-                <FormInput label="Status">
-                  <select
-                    value={statusForm.status}
-                    onChange={(e) =>
-                      setStatusForm((p) => ({ ...p, status: e.target.value }))
-                    }
-                    className={inputCls}
-                  >
-                    {statusOptions.map((s) => (
-                      <option key={s} value={s}>
-                        {statusConfig[s]?.label || s}
-                      </option>
-                    ))}
-                  </select>
-                </FormInput>
-                <FormInput label="Note">
-                  <textarea
-                    rows={4}
-                    value={statusForm.note}
-                    onChange={(e) =>
-                      setStatusForm((p) => ({ ...p, note: e.target.value }))
-                    }
-                    placeholder="Add a note…"
-                    className={inputCls}
-                  />
-                </FormInput>
-                <button
-                  type="submit"
-                  disabled={updatingAssignmentId === selectedAssignment._id}
-                  className="cursor-pointer w-full inline-flex items-center justify-center gap-2 rounded-xl bg-slate-900 hover:bg-slate-700 text-white text-sm font-semibold py-2.5 transition-all disabled:opacity-50"
-                >
-                  {updatingAssignmentId === selectedAssignment._id ? (
-                    <Loader2 size={16} className="animate-spin" />
-                  ) : (
-                    <BadgeCheck size={16} />
-                  )}
-                  Save Changes
-                </button>
-              </form>
-            </div>
-          </div>,
-          document.body,
-        )}
-
-      {deleteModal.open &&
-        createPortal(
-          <div
-            className="fixed inset-0 z-50 flex items-center justify-center p-4"
-            style={backdropStyle}
-          >
-            <div
-              className="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden"
-              style={modalStyle}
-            >
-              <div className="p-6 text-center space-y-4">
-                <div className="w-14 h-14 rounded-full bg-red-50 flex items-center justify-center mx-auto">
-                  <AlertTriangle size={24} className="text-red-500" />
-                </div>
-                <div>
-                  <h3 className="font-bold text-slate-800 text-lg">
-                    Delete Account?
-                  </h3>
-                  <p className="text-sm text-slate-500 mt-1.5">
-                    You're about to delete{" "}
-                    <span className="font-semibold text-slate-700">
-                      "{deleteModal.salesName}"
-                    </span>
-                    . This action cannot be undone.
-                  </p>
-                </div>
-                <div className="flex gap-3 pt-1">
-                  <button
-                    onClick={() =>
-                      setDeleteModal({
-                        open: false,
-                        salesId: null,
-                        salesName: "",
-                      })
-                    }
-                    className="cursor-pointer flex-1 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-700 text-sm font-semibold py-2.5 transition-all"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    onClick={confirmDeleteSales}
-                    disabled={deletingSalesId === deleteModal.salesId}
-                    className="cursor-pointer flex-1 rounded-xl bg-red-600 hover:bg-red-700 text-white text-sm font-semibold py-2.5 transition-all disabled:opacity-60"
-                  >
-                    {deletingSalesId === deleteModal.salesId ? (
-                      <Loader2 className="animate-spin mx-auto" size={16} />
-                    ) : (
-                      "Delete"
-                    )}
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>,
-          document.body,
-        )}
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
-};
-
-export default ManageSales;
+}
