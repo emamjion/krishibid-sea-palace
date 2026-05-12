@@ -87,22 +87,74 @@ const LoginPage = () => {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-100 px-4">
+    <div className="min-h-screen flex flex-col items-center justify-center bg-gray-100 px-4  gap-3">
       <div className="flex flex-col-reverse md:flex-row items-stretch">
         {/* OFFER CARD */}
         {offer && (
-          <div className="relative group w-140 min-h-140 rounded-l-2xl shadow border border-gray-200 overflow-hidden">
+          <div className="relative group w-136 min-h-130 rounded-l-2xl shadow border border-gray-200 overflow-hidden">
             <img
               src={offer.image}
               alt="offer"
-              className="w-full h-full object-cover"
+              className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
             />
 
-            {/* Tooltip */}
-            <div className="absolute bottom-4 left-1/2 -translate-x-1/2 w-[90%] bg-black text-white text-sm rounded-xl px-4 py-3 opacity-0 group-hover:opacity-100 transition duration-300 pointer-events-none">
-              <p className="font-semibold">{offer.title}</p>
-              <p>Price: {offer.discountPrice}৳</p>
-              <p>Expires: {new Date(offer.expiresAt).toLocaleDateString()}</p>
+            {/* Improved Tooltip */}
+            <div className="absolute inset-0 bg-linear-to-t from-black/80 via-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-all duration-400 pointer-events-none" />
+
+            <div
+              className="
+                absolute bottom-0 left-0 right-0
+                translate-y-2 opacity-0
+                group-hover:translate-y-0 group-hover:opacity-100
+                transition-all duration-400 ease-out
+                pointer-events-none
+              "
+            >
+              <div className="m-4 rounded-2xl overflow-hidden backdrop-blur-md bg-white/10 border border-white/20 shadow-2xl">
+                {/* Header strip */}
+                <div className="bg-[#ebb93a] px-4 py-2 flex items-center gap-2">
+                  <span className="text-xs font-bold tracking-widest text-[#131518] uppercase">
+                    🎉 Special Offer
+                  </span>
+                </div>
+
+                {/* Body */}
+                <div className="px-4 py-3 space-y-1">
+                  <p className="text-white font-semibold text-base leading-snug">
+                    {offer.title}
+                  </p>
+
+                  <div className="flex items-center justify-between pt-1">
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-[#ebb93a] font-bold text-xl">
+                        {offer.discountPrice}৳
+                      </span>
+                    </div>
+
+                    <div className="flex items-center gap-1 text-white/70 text-xs">
+                      <svg
+                        className="w-3.5 h-3.5"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                        stroke="currentColor"
+                        strokeWidth={2}
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"
+                        />
+                      </svg>
+                      Expires:{" "}
+                      {new Date(offer.expiresAt).toLocaleDateString("en-GB", {
+                        day: "numeric",
+                        month: "short",
+                        year: "numeric",
+                      })}
+                    </div>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         )}
@@ -127,7 +179,7 @@ const LoginPage = () => {
                 value={formData.email}
                 onChange={handleChange}
                 placeholder="example@email.com"
-                className="w-full p-2 rounded-xl border border-gray-300 bg-gray-50 focus:bg-white focus:ring-2 focus:ring-[#ebb93a]  focus:outline-none transition duration-300 placeholder:text-sm"
+                className="w-full p-2 rounded-xl border border-gray-300 bg-gray-50 focus:bg-white focus:ring-2 focus:ring-[#ebb93a] focus:outline-none transition duration-300 placeholder:text-sm"
               />
             </div>
 
@@ -141,7 +193,7 @@ const LoginPage = () => {
                 value={formData.password}
                 onChange={handleChange}
                 placeholder="Enter your password"
-                className="w-full px-2 py-2 rounded-xl border border-gray-300 bg-gray-50 focus:bg-white focus:ring-2 focus:ring-[#ebb93a]  focus:outline-none transition duration-300 placeholder:text-sm"
+                className="w-full px-2 py-2 rounded-xl border border-gray-300 bg-gray-50 focus:bg-white focus:ring-2 focus:ring-[#ebb93a] focus:outline-none transition duration-300 placeholder:text-sm"
               />
             </div>
 
@@ -160,7 +212,7 @@ const LoginPage = () => {
             </button>
           </form>
 
-          <p className="mt-8 text-sm text-center text-gray-600">
+          <p className="mt-4 text-sm text-center text-gray-600">
             Don&apos;t have an account?{" "}
             <Link
               to="/register"
@@ -171,7 +223,7 @@ const LoginPage = () => {
           </p>
 
           <hr className="my-3 border border-gray-200" />
-          <div className="mt-4">
+          <div className="">
             <p className="text-center text-sm text-gray-500 mb-4">
               Or continue with
             </p>
@@ -204,6 +256,34 @@ const LoginPage = () => {
           </div>
         </div>
       </div>
+
+      {/* FOOTER */}
+      <footer className="w-full max-w-2xl">
+        <div className="flex flex-wrap items-center justify-center gap-1.5 text-xs text-gray-400">
+          <span>© {new Date().getFullYear()} All rights reserved.</span>
+          <span className="text-gray-300">·</span>
+          <Link
+            to="/privacy-policy"
+            className="hover:text-[#ebb93a] hover:underline underline-offset-2 transition-colors duration-200"
+          >
+            Privacy Policy
+          </Link>
+          <span className="text-gray-300">·</span>
+          <Link
+            to="/refund-policy"
+            className="hover:text-[#ebb93a] hover:underline underline-offset-2 transition-colors duration-200"
+          >
+            Return &amp; Refund Policy
+          </Link>
+          <span className="text-gray-300">·</span>
+          <Link
+            to="/terms-and-conditions"
+            className="hover:text-[#ebb93a] hover:underline underline-offset-2 transition-colors duration-200"
+          >
+            Terms &amp; Conditions
+          </Link>
+        </div>
+      </footer>
     </div>
   );
 };
