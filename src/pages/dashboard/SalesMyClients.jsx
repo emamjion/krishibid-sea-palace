@@ -145,7 +145,6 @@ export default function SalesMyBookings() {
     return filtered.slice(start, start + perPage);
   }, [filtered, page]);
 
-  // reset page on filter/search change
   useEffect(() => {
     setPage(1);
   }, [search, statusFilter]);
